@@ -4,6 +4,11 @@ set -euo pipefail
 working_directory=${1:-.}
 raw_arguments=${2:-}
 
+if [[ "$working_directory" = /* ]]; then
+    echo "pipeline-action: working-directory must be relative to the workspace" >&2
+    exit 2
+fi
+
 workspace=${GITHUB_WORKSPACE:-/github/workspace}
 if [[ ! -d "$workspace" && -d /github/workspace ]]; then
     workspace=/github/workspace
@@ -13,12 +18,12 @@ if [[ ! -d "$workspace" ]]; then
 fi
 
 workspace=$(cd -- "$workspace" && pwd -P)
-case "$working_directory" in
-    /*) destination=$working_directory ;;
-    *) destination=$workspace/$working_directory ;;
-esac
-cd -- "$destination"
+cd -- "$workspace/$working_directory"
 destination=$(pwd -P)
+if [[ "$destination" != "$workspace" && "$destination" != "$workspace/"* ]]; then
+    echo "pipeline-action: working-directory resolves outside the workspace" >&2
+    exit 2
+fi
 
 # GitHub's checkout belongs to the runner user while Docker actions run as root.
 # Trust only the mounted workspace and the explicitly selected working directory.

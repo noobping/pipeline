@@ -71,6 +71,24 @@ test -e "$root/$yaml_fixture/action-one.started"
 test -e "$root/$yaml_fixture/action-two.started"
 
 set +e
+outside_output=$(run_action .. "" 2>&1)
+outside_status=$?
+set -e
+if [[ $outside_status -ne 2 || "$outside_output" != *"resolves outside the workspace"* ]]; then
+    echo "working-directory traversal was not rejected safely" >&2
+    exit 1
+fi
+
+set +e
+absolute_output=$(run_action /tmp "" 2>&1)
+absolute_status=$?
+set -e
+if [[ $absolute_status -ne 2 || "$absolute_output" != *"must be relative"* ]]; then
+    echo "absolute working-directory was not rejected safely" >&2
+    exit 1
+fi
+
+set +e
 run_action "$fixture" failure
 status=$?
 set -e
