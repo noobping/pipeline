@@ -202,5 +202,3 @@ hooks:
 Use `incoming: skip` to disable incoming-code execution entirely. Trusted
 definitions control the recipes but are not a sandbox for the source those
 recipes inspect or build.
-
-[MIT](LICENSE)
