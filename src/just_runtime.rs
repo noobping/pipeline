@@ -468,6 +468,8 @@ fn copy_from_container(
             OsStr::new("--name"),
             OsStr::new(&name),
             OsStr::new(&config.image),
+            OsStr::new("/just"),
+            OsStr::new("--version"),
         ],
         config.search_path.as_deref(),
     )
@@ -734,7 +736,7 @@ mod tests {
         executable(
             &engine,
             &format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \"$1\" in\n  image) echo 'image not known' >&2; exit 125 ;;\n  pull) exit 0 ;;\n  create) echo container-123; exit 0 ;;\n  cp) /usr/bin/cp '{}' \"$3\"; exit $? ;;\n  rm) exit 0 ;;\nesac\nexit 1\n",
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \"$1\" in\n  image) echo 'image not known' >&2; exit 125 ;;\n  pull) exit 0 ;;\n  create) [ \"$#\" -eq 6 ] && [ \"$2\" = --name ] && [ \"$4\" = official/just:1.57 ] && [ \"$5\" = /just ] && [ \"$6\" = --version ] || exit 64; echo container-123; exit 0 ;;\n  cp) /usr/bin/cp '{}' \"$3\"; exit $? ;;\n  rm) exit 0 ;;\nesac\nexit 1\n",
                 log.display(),
                 payload.display()
             ),
@@ -754,8 +756,12 @@ mod tests {
         let calls = fs::read_to_string(log).unwrap();
         assert!(calls.contains("image inspect official/just:1.57"));
         assert!(calls.contains("pull official/just:1.57"));
-        assert!(calls.contains("create --name pipeline-just-"));
-        assert!(calls.contains(" official/just:1.57"));
+        let create = calls
+            .lines()
+            .find(|line| line.starts_with("create "))
+            .expect("container create call");
+        assert!(create.starts_with("create --name pipeline-just-"));
+        assert!(create.ends_with(" official/just:1.57 /just --version"));
         assert!(calls.contains("cp container-123:/just"));
         assert!(calls.contains("rm -f container-123"));
     }
@@ -773,7 +779,7 @@ mod tests {
         executable(
             &bin.join("docker"),
             &format!(
-                "#!/bin/sh\ncase \"$1\" in\n image) exit 0 ;;\n create) echo docker-id; exit 0 ;;\n cp) /usr/bin/cp '{}' \"$3\"; exit $? ;;\n rm) exit 0 ;;\nesac\nexit 1\n",
+                "#!/bin/sh\ncase \"$1\" in\n image) exit 0 ;;\n create) [ \"$#\" -eq 6 ] && [ \"$2\" = --name ] && [ \"$4\" = official/just:tag ] && [ \"$5\" = /just ] && [ \"$6\" = --version ] || exit 64; echo docker-id; exit 0 ;;\n cp) /usr/bin/cp '{}' \"$3\"; exit $? ;;\n rm) exit 0 ;;\nesac\nexit 1\n",
                 payload.display()
             ),
         );
