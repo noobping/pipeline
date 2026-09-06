@@ -40,17 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: format
-        run: cargo fmt --check
+      - name: bootstrap Pipeline
+        run: cargo build --locked --release
 
-      - name: lint
-        run: cargo clippy --locked --all-targets -- -D warnings
-
-      - name: test
-        run: cargo test --locked --all --verbose
-
-      - name: build
-        run: cargo build --locked --release --verbose
+      - name: build with Pipeline
+        run: target/release/pipeline --cap-jobs 4 build
 
       - name: package binary
         run: |
@@ -107,10 +101,6 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: download binaries
         uses: actions/download-artifact@v4
         with:
@@ -134,23 +124,36 @@ jobs:
             "${IMAGE_NAME}:arm64-${GITHUB_SHA}"
 
       - name: move continuous tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git tag -f continuous "$GITHUB_SHA"
-          git push -f origin refs/tags/continuous
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/continuous" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/git/refs/tags/continuous" \
+              --field sha="$GITHUB_SHA" \
+              --field force=true >/dev/null
+          else
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/git/refs" \
+              --field ref=refs/tags/continuous \
+              --field sha="$GITHUB_SHA" >/dev/null
+          fi
 
       - name: create or update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view continuous >/dev/null 2>&1 && \
+          if gh release view continuous >/dev/null 2>&1; then
             gh release edit continuous \
               --title "Continuous Release" \
               --notes "Latest build from main: $GITHUB_SHA" \
-              --latest=true || \
+              --latest=true
+          else
             gh release create continuous \
               --title "Continuous Release" \
               --notes "Latest build from main: $GITHUB_SHA" \
               --latest=true
+          fi
 
       - name: upload release assets
         env:

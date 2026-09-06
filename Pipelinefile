@@ -1,9 +1,9 @@
-set shell := ["bash", "-cu"]
+set shell := ["bash", "-c"]
 
 default: check
 
 [parallel]
-check: fmt clippy test
+check: fmt clippy test scripts
 
 fmt:
     cargo fmt --check
@@ -14,5 +14,9 @@ clippy:
 test:
     cargo test --locked --all
 
+scripts:
+    bash -n entrypoint.sh tests/container.sh
+
 build: check
     cargo build --locked --release
+    target/release/pipeline --version
