@@ -1,0 +1,25 @@
+name: Pipeline
+description: Run a Just-powered Pipeline definition in the checked-out repository
+author: noobping
+
+inputs:
+  working-directory:
+    description: Directory containing the Pipeline definition, relative to the workspace
+    required: false
+    default: "."
+  arguments:
+    description: Pipeline command-line arguments, one argument per line
+    required: false
+    default: ""
+
+runs:
+  using: docker
+  image: Dockerfile
+  entrypoint: /usr/local/bin/pipeline-action
+  args:
+    - ${{ inputs.working-directory }}
+    - ${{ inputs.arguments }}
+
+branding:
+  icon: git-branch
+  color: blue

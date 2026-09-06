@@ -1,0 +1,14 @@
+set shell := ["bash", "-euc"]
+
+default:
+    @git rev-parse --is-inside-work-tree | grep -qx true
+    @printf 'action-ok\n' > action-output
+
+argument value:
+    @test "{{ value }}" = "hello world"
+
+failure:
+    @exit 23
+
+cancel:
+    @trap 'exit 0' TERM INT; touch action-child.started; sleep 300; touch action-child.finished

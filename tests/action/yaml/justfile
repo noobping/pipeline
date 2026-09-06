@@ -1,0 +1,5 @@
+one:
+    @touch action-one.started; i=0; while [ ! -e action-two.started ] && [ "$i" -lt 200 ]; do sleep 0.01; i=$((i + 1)); done; test -e action-two.started
+
+two:
+    @touch action-two.started; i=0; while [ ! -e action-one.started ] && [ "$i" -lt 200 ]; do sleep 0.01; i=$((i + 1)); done; test -e action-one.started

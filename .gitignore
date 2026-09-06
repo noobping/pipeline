@@ -5,7 +5,6 @@
 .directory
 .fuse_hidden*
 .nfs*
-Cargo.lock
 debug/
 dist/
 rust-project.json

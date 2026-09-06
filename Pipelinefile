@@ -1,0 +1,18 @@
+set shell := ["bash", "-cu"]
+
+default: check
+
+[parallel]
+check: fmt clippy test
+
+fmt:
+    cargo fmt --check
+
+clippy:
+    cargo clippy --locked --all-targets -- -D warnings
+
+test:
+    cargo test --locked --all
+
+build: check
+    cargo build --locked --release

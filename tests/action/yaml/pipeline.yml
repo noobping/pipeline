@@ -1,0 +1,9 @@
+version: 1
+
+pipelines:
+  check:
+    jobs:
+      one:
+        just: one
+      two:
+        just: two

@@ -14,14 +14,19 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  IMAGE_NAME: ghcr.io/noobping/pipeline
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     name: Build ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+
+    permissions:
+      contents: read
+      packages: write
 
     strategy:
       fail-fast: false
@@ -35,32 +40,71 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: format
+        run: cargo fmt --check
+
       - name: lint
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: test
-        run: cargo test --all --verbose
+        run: cargo test --locked --all --verbose
 
       - name: build
-        run: cargo build --release --verbose
+        run: cargo build --locked --release --verbose
 
       - name: package binary
         run: |
           mkdir -p dist
-          cp target/release/ci dist/ci-linux-${{ matrix.arch }}
-          chmod +x dist/ci-linux-${{ matrix.arch }}
+          cp target/release/pipeline dist/pipeline-linux-${{ matrix.arch }}
+          chmod +x dist/pipeline-linux-${{ matrix.arch }}
+          cd dist
+          sha256sum pipeline-linux-${{ matrix.arch }} > pipeline-linux-${{ matrix.arch }}.sha256
+
+      - name: build container
+        run: docker build --pull --tag "${IMAGE_NAME}:${{ matrix.arch }}-${GITHUB_SHA}" .
+
+      - name: test container
+        run: tests/container.sh "${IMAGE_NAME}:${{ matrix.arch }}-${GITHUB_SHA}"
+
+      - name: test action
+        uses: ./
+        with:
+          working-directory: tests/action/fixture with spaces
+
+      - name: verify action output
+        run: |
+          test "$(cat 'tests/action/fixture with spaces/action-output')" = action-ok
+          rm -f 'tests/action/fixture with spaces/action-output'
+
+      - name: log in to the container registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: push architecture container
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker push "${IMAGE_NAME}:${{ matrix.arch }}-${GITHUB_SHA}"
 
       - name: upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ci-linux-${{ matrix.arch }}
-          path: dist/ci-linux-${{ matrix.arch }}
+          name: pipeline-linux-${{ matrix.arch }}
+          path: |
+            dist/pipeline-linux-${{ matrix.arch }}
+            dist/pipeline-linux-${{ matrix.arch }}.sha256
 
   release:
     needs: build
     runs-on: ubuntu-latest
 
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: write
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +116,22 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: publish multi-architecture container
+        run: |
+          docker buildx imagetools create \
+            --tag "${IMAGE_NAME}:${GITHUB_SHA}" \
+            --tag "${IMAGE_NAME}:continuous" \
+            --tag "${IMAGE_NAME}:latest" \
+            "${IMAGE_NAME}:amd64-${GITHUB_SHA}" \
+            "${IMAGE_NAME}:arm64-${GITHUB_SHA}"
 
       - name: move continuous tag
         run: |
@@ -96,4 +156,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload continuous dist/ci-linux-amd64 dist/ci-linux-arm64 --clobber
+          gh release upload continuous \
+            dist/pipeline-linux-amd64 \
+            dist/pipeline-linux-amd64.sha256 \
+            dist/pipeline-linux-arm64 \
+            dist/pipeline-linux-arm64.sha256 \
+            --clobber
