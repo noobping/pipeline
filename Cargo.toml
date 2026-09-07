@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["noobping"]
-description = "A small Just-powered pipeline runner"
+description = "Just-powered (local) pipelines and Git hooks"
 repository = "https://github.com/noobping/pipeline"
 publish = false
 
