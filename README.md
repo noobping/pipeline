@@ -1,5 +1,6 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 [![Release](https://github.com/noobping/pipeline/actions/workflows/release.yml/badge.svg)](https://github.com/noobping/pipeline/actions/workflows/release.yml)
+[![GitLab CI](https://gitlab.com/noobping/pipeline/badges/main/pipeline.svg)](https://gitlab.com/noobping/pipeline/-/pipelines)
 
 # Pipeline
 
@@ -119,7 +120,7 @@ After the initial Cargo build, Pipeline builds itself:
 target/release/pipeline build
 ```
 
-## Container and GitHub Action
+## Container and CI
 
 The Linux amd64/arm64 image bundles Pipeline, Just, Bash, Git, and CA
 certificates. Arguments after the image name go directly to Pipeline:
@@ -153,6 +154,12 @@ spaces are not evaluated by a shell:
 Use `working-directory: services/api` for a definition below the repository
 root. From an ephemeral container, install hooks with `pipeline add --copy`;
 linked binaries disappear with the container.
+
+GitLab CI is supported alongside GitHub Actions. Its native AMD64 and ARM64
+jobs run in parallel, and default-branch pipelines publish the multi-architecture
+container to the GitLab project registry plus an immutable release for each
+pipeline. The supplied runner tags target GitLab.com hosted runners; replace
+them and enable privileged Docker-in-Docker when using self-managed runners.
 
 ## Git hooks
 

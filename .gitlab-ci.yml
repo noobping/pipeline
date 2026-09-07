@@ -1,0 +1,141 @@
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+  rules:
+    - if: >-
+        $CI_PIPELINE_SOURCE == "merge_request_event" &&
+        $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
+
+stages:
+  - build
+  - publish
+
+default:
+  interruptible: true
+
+variables:
+  BUILDAH_FORMAT: docker
+  CARGO_TERM_COLOR: always
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  STORAGE_DRIVER: vfs
+
+build:
+  stage: build
+  image: docker.io/library/rust:1-bookworm
+  services:
+    - name: docker.io/library/docker:27-dind
+      alias: docker
+      command: ["--mtu=1400"]
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64]
+  tags:
+    - "saas-linux-small-${ARCH}"
+  before_script:
+    - rustup component add rustfmt clippy
+    - apt-get update
+    - apt-get install --yes --no-install-recommends docker.io
+    - rm -rf /var/lib/apt/lists/*
+    - |
+      for attempt in $(seq 1 60); do
+        docker info >/dev/null 2>&1 && break
+        if [ "$attempt" -eq 60 ]; then
+          echo "Docker did not become ready." >&2
+          exit 1
+        fi
+        sleep 1
+      done
+  script:
+    - |
+      case "$ARCH/$(uname -m)" in
+        amd64/x86_64|arm64/aarch64) ;;
+        *) echo "The $ARCH job is on the wrong runner architecture." >&2; exit 1 ;;
+      esac
+    - cargo build --locked --release
+    - target/release/pipeline --cap-jobs 4 build
+    - mkdir -p dist
+    - cp target/release/pipeline "dist/pipeline-linux-${ARCH}"
+    - chmod +x "dist/pipeline-linux-${ARCH}"
+    - (cd dist && sha256sum "pipeline-linux-${ARCH}" > "pipeline-linux-${ARCH}.sha256")
+    - docker build --pull --tag "$CI_REGISTRY_IMAGE:${ARCH}-${CI_COMMIT_SHA}" .
+    - tests/container.sh "$CI_REGISTRY_IMAGE:${ARCH}-${CI_COMMIT_SHA}"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        printf '%s' "$CI_REGISTRY_PASSWORD" |
+          docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+        docker push "$CI_REGISTRY_IMAGE:${ARCH}-${CI_COMMIT_SHA}"
+      fi
+  artifacts:
+    name: "pipeline-linux-${ARCH}"
+    paths:
+      - "dist/pipeline-linux-${ARCH}"
+      - "dist/pipeline-linux-${ARCH}.sha256"
+    expire_in: 30 days
+
+container-manifest:
+  stage: publish
+  image:
+    name: quay.io/buildah/stable
+    entrypoint: [""]
+  interruptible: false
+  tags:
+    - saas-linux-small-amd64
+  needs:
+    - job: build
+      artifacts: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  resource_group: container-manifest
+  before_script:
+    - dnf install --assumeyes --setopt=install_weak_deps=False curl jq
+    - dnf clean all
+    - rm -rf /var/cache/dnf
+    - printf '%s' "$CI_REGISTRY_PASSWORD" | buildah login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - buildah manifest create "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+    - buildah manifest add "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" "docker://$CI_REGISTRY_IMAGE:amd64-$CI_COMMIT_SHA"
+    - buildah manifest add "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" "docker://$CI_REGISTRY_IMAGE:arm64-$CI_COMMIT_SHA"
+    - buildah manifest push --all "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" "docker://$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+    - |
+      encoded_branch="$(jq -rn --arg value "$CI_DEFAULT_BRANCH" '$value | @uri')"
+      branch_sha="$(curl --fail-with-body --silent --show-error --location \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/repository/commits/$encoded_branch" |
+        jq -r '.id')"
+      if [ "$branch_sha" != "$CI_COMMIT_SHA" ]; then
+        echo "Skipping moving tags for stale commit $CI_COMMIT_SHA."
+        exit 0
+      fi
+    - buildah manifest push --all "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" "docker://$CI_REGISTRY_IMAGE:continuous"
+    - buildah manifest push --all "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" "docker://$CI_REGISTRY_IMAGE:latest"
+
+release:
+  stage: publish
+  interruptible: false
+  image:
+    name: registry.gitlab.com/gitlab-org/cli:latest
+    entrypoint: [""]
+  tags:
+    - saas-linux-small-amd64
+  needs:
+    - job: build
+      artifacts: true
+    - job: container-manifest
+      artifacts: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  resource_group: continuous-release
+  variables:
+    GLAB_ENABLE_CI_AUTOLOGIN: "true"
+  script:
+    - |
+      release_tag="continuous-$CI_PIPELINE_IID-$CI_JOB_ID"
+      glab release create "$release_tag" dist/* \
+        --use-package-registry \
+        --package-name "pipeline-$CI_JOB_ID" \
+        --name "Continuous $CI_PIPELINE_IID" \
+        --notes "Build from $CI_DEFAULT_BRANCH at $CI_COMMIT_SHA." \
+        --ref "$CI_COMMIT_SHA"
