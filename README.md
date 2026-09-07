@@ -1,6 +1,5 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 [![Release](https://github.com/noobping/pipeline/actions/workflows/release.yml/badge.svg)](https://github.com/noobping/pipeline/actions/workflows/release.yml)
-[![GitLab CI](https://gitlab.com/noobping/pipeline/badges/main/pipeline.svg)](https://gitlab.com/noobping/pipeline/-/pipelines)
 
 # Pipeline
 
