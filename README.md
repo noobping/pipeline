@@ -155,12 +155,6 @@ Use `working-directory: services/api` for a definition below the repository
 root. From an ephemeral container, install hooks with `pipeline add --copy`;
 linked binaries disappear with the container.
 
-GitLab CI is supported alongside GitHub Actions. Its native AMD64 and ARM64
-jobs run in parallel, and default-branch pipelines publish the multi-architecture
-container to the GitLab project registry plus an immutable release for each
-pipeline. The supplied runner tags target GitLab.com hosted runners; replace
-them and enable privileged Docker-in-Docker when using self-managed runners.
-
 ## Git hooks
 
 Pipeline supports normal repositories, `.git` directories, linked worktrees,
